@@ -2,7 +2,11 @@
 
 [![Build Status](https://travis-ci.org/huonw/unsafe_ls.png)](https://travis-ci.org/huonw/unsafe_ls)
 
-List unsafe blocks and the unsafe actions within them.
+List unsafe blocks and the unsafe actions within them, to enable
+easier auditing of regions that need extra-careful examination. This
+cannot catch memory-unsafe actions in safe code caused by bad `unsafe`
+code, but correctly written/audited `unsafe` blocks will not cause
+such problems.
 
 It can be used to only display blocks that have non-FFI unsafety in
 them, to avoid having to filter through lots of "routine" C calls.
@@ -30,13 +34,13 @@ See `unsafe_ls -h` for all flags.
 
 ### Only FFI
 
-    $ ./unsafe_ls -f test.rs  # only FFI
+    $ ./unsafe_ls -f test.rs
     test.rs:14:5: block with 1 ffi
             abort()
 
 ### All `unsafe`
 
-    $ ./unsafe_ls -nf test.rs # all unsafe actions
+    $ ./unsafe_ls -nf test.rs
     test.rs:3:1: fn with 1 static mut
         x += 1
     test.rs:7:5: block with 1 deref, 1 static mut
