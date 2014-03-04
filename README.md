@@ -1,5 +1,7 @@
 # unsafe_ls
 
+[![Build Status](https://travis-ci.org/huonw/unsafe_ls.png)](https://travis-ci.org/huonw/unsafe_ls)
+
 List unsafe blocks and the unsafe actions within them.
 
 It can be used to only display blocks that have non-FFI unsafety in
