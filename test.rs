@@ -9,7 +9,10 @@ fn main() {
         x += 1;
     }
     unsafe {
-        foo()
+        foo();
+        if false {
+            abort()
+        }
     }
     unsafe {
         abort()

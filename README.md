@@ -35,7 +35,9 @@ See `unsafe_ls -h` for all flags.
 ### Only FFI
 
     $ ./unsafe_ls -f test.rs
-    test.rs:14:5: block with 1 ffi
+    test.rs:11:5: block with 1 ffi, 1 unsafe call
+                abort()
+    test.rs:17:5: block with 1 ffi
             abort()
 
 ### All `unsafe`
@@ -46,9 +48,10 @@ See `unsafe_ls -h` for all flags.
     test.rs:7:5: block with 1 deref, 1 static mut
             *std::ptr::null::<int>();
             x += 1;
-    test.rs:11:5: block with 1 unsafe call
-            foo()
-    test.rs:14:5: block with 1 ffi
+    test.rs:11:5: block with 1 ffi, 1 unsafe call
+            foo();
+                abort()
+    test.rs:17:5: block with 1 ffi
             abort()
 
 
