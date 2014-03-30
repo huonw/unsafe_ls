@@ -1,5 +1,5 @@
 use rustc::middle::ty;
-use rustc::middle::typeck::MethodMap;
+use rustc::middle::typeck::{MethodCall, MethodMap};
 
 use syntax::{ast, ast_util, ast_map};
 use syntax::codemap::Span;
@@ -7,7 +7,6 @@ use syntax::parse::token;
 use syntax::visit;
 use syntax::visit::Visitor;
 
-use std::vec_ng::Vec;
 use std::fmt;
 use std::mem::replace;
 use collections::treemap::TreeMap;
@@ -78,8 +77,8 @@ impl fmt::Show for NodeInfo {
     }
 }
 
-pub struct UnsafeVisitor {
-    priv tcx: ty::ctxt,
+pub struct UnsafeVisitor<'tcx> {
+    priv tcx: &'tcx ty::ctxt,
 
     /// The method map.
     priv method_map: MethodMap,
@@ -88,8 +87,8 @@ pub struct UnsafeVisitor {
     unsafes: TreeMap<ast::NodeId, NodeInfo>,
 }
 
-impl UnsafeVisitor {
-    pub fn new(tcx: ty::ctxt, method_map: MethodMap) -> UnsafeVisitor {
+impl<'tcx> UnsafeVisitor<'tcx> {
+    pub fn new(tcx: &'tcx ty::ctxt, method_map: MethodMap) -> UnsafeVisitor<'tcx> {
         UnsafeVisitor {
             tcx: tcx,
             method_map: method_map,
@@ -107,7 +106,7 @@ impl UnsafeVisitor {
     }
 }
 
-impl Visitor<()> for UnsafeVisitor {
+impl<'tcx> Visitor<()> for UnsafeVisitor<'tcx> {
     fn visit_fn(&mut self, fn_kind: &visit::FnKind, fn_decl: &ast::FnDecl,
                 block: &ast::Block, span: Span, node_id: ast::NodeId, _:()) {
         let (is_item_fn, is_unsafe_fn) = match *fn_kind {
@@ -163,7 +162,8 @@ impl Visitor<()> for UnsafeVisitor {
         if self.node_info.is_some() {
             match expr.node {
                 ast::ExprMethodCall(_, _, _) => {
-                    let base_type = self.method_map.borrow().get().get(&expr.id).ty;
+                    let method_call = MethodCall::expr(expr.id);
+                    let base_type = self.method_map.borrow().get(&method_call).ty;
                     if type_is_unsafe_function(base_type) {
                         self.info().unsafe_call.push(expr.span)
                     }
@@ -177,7 +177,7 @@ impl Visitor<()> for UnsafeVisitor {
                             self.info().transmute.push(expr.span)
                         }
                         _ => {
-                            match self.tcx.def_map.borrow().get().find(&base.id) {
+                            match self.tcx.def_map.borrow().find(&base.id) {
                                 Some(&ast::DefFn(did, ast::UnsafeFn)) => {
                                     if ast_util::is_local(did) {
                                         match self.tcx.map.get(did.node) {

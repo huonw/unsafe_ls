@@ -60,7 +60,7 @@ See `unsafe_ls -h` for all flags.
     rustc -O bin.rs
 
 Known to work with Rust master at
-6e7f170fedd3c526a643c0b2d13863acd982be02.
+c329a17461b29da3c9f004154d32e4f153d727df.
 
 ## Testimonials
 

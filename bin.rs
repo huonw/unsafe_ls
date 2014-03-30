@@ -6,12 +6,11 @@ extern crate getopts;
 extern crate syntax;
 extern crate rustc;
 
+use rustc::driver::{driver, session};
 use rustc::middle::ty;
 use rustc::middle::typeck::MethodMap;
 use syntax::ast;
-use syntax::codemap;
 use std::os;
-use std::vec_ng::Vec;
 use collections::HashSet;
 
 mod visitor;
@@ -42,9 +41,10 @@ fn main() {
     libs.insert(Path::new(DEFAULT_LIB_DIR));
 
     for name in matches.free.iter() {
-        let (cm, krate, tcx, method_map) = get_ast(Path::new(name.as_slice()), libs.clone());
+        let (krate, tcx, method_map) = get_ast(Path::new(name.as_slice()), libs.clone());
+        let cm = tcx.sess.codemap();
 
-        let mut visitor = visitor::UnsafeVisitor::new(tcx, method_map);
+        let mut visitor = visitor::UnsafeVisitor::new(&tcx, method_map);
         visitor.check_crate(&krate);
 
         for (_, info) in visitor.unsafes.iter() {
@@ -113,34 +113,35 @@ fn main() {
 
 /// Extract the expanded ast of a krate, along with the codemap which
 /// connects source code locations to the actual code.
-fn get_ast(path: Path, libs: HashSet<Path>) -> (@codemap::CodeMap, ast::Crate, ty::ctxt, MethodMap) {
-    use rustc::driver::{driver, session};
+fn get_ast(path: Path, libs: HashSet<Path>) -> (ast::Crate, ty::ctxt, MethodMap) {
     use syntax::diagnostic;
 
     // cargo culted from rustdoc_ng :(
-    let parsesess = syntax::parse::new_parse_sess();
     let input = driver::FileInput(path);
 
-    let sessopts = @session::Options {
-        maybe_sysroot: Some(@os::self_exe_path().unwrap().dir_path()),
-        addl_lib_search_paths: @std::cell::RefCell::new(libs),
-        .. (*session::basic_options()).clone()
+    let sessopts = session::Options {
+        maybe_sysroot: Some(os::self_exe_path().unwrap().dir_path()),
+        addl_lib_search_paths: std::cell::RefCell::new(libs),
+        .. session::basic_options().clone()
     };
 
+    let codemap = syntax::codemap::CodeMap::new();
     let diagnostic_handler = diagnostic::default_handler();
     let span_diagnostic_handler =
-        diagnostic::mk_span_handler(diagnostic_handler, parsesess.cm);
+        diagnostic::mk_span_handler(diagnostic_handler, codemap);
 
-    let sess = driver::build_session_(sessopts, None, parsesess.cm,
-                                      span_diagnostic_handler);
+    let sess = driver::build_session_(sessopts, None, span_diagnostic_handler);
 
-    let cfg = driver::build_configuration(sess);
+    let cfg = driver::build_configuration(&sess);
 
-    let krate = driver::phase_1_parse_input(sess, cfg, &input);
-    let loader = &mut rustc::metadata::creader::Loader::new(sess);
+    let krate = driver::phase_1_parse_input(&sess, cfg, &input);
+    let (krate, ast_map) = {
+        let loader = &mut rustc::metadata::creader::Loader::new(&sess);
 
-    let (krate, ast_map) = driver::phase_2_configure_and_expand(sess, loader, krate);
+        driver::phase_2_configure_and_expand(&sess, loader, krate,
+                                             &from_str("unsafe_ls").unwrap())
+    };
     let res = driver::phase_3_run_analysis_passes(sess, &krate, ast_map);
-
-    (parsesess.cm, krate, res.ty_cx, res.maps.method_map)
+    let driver::CrateAnalysis { ty_cx, maps, .. } = res;
+    (krate, ty_cx, maps.method_map)
 }
