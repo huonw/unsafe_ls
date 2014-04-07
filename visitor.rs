@@ -26,15 +26,15 @@ fn type_is_unsafe_function(ty: ty::t) -> bool {
 }
 
 pub struct NodeInfo {
-    span: Span,
-    is_fn: bool,
-    compiler: bool,
-    ffi: Vec<Span>,
-    raw_deref: Vec<Span>,
-    static_mut: Vec<Span>,
-    unsafe_call: Vec<Span>,
-    transmute: Vec<Span>,
-    asm: Vec<Span>,
+    pub span: Span,
+    pub is_fn: bool,
+    pub compiler: bool,
+    pub ffi: Vec<Span>,
+    pub raw_deref: Vec<Span>,
+    pub static_mut: Vec<Span>,
+    pub unsafe_call: Vec<Span>,
+    pub transmute: Vec<Span>,
+    pub asm: Vec<Span>,
 }
 
 impl NodeInfo {
@@ -78,13 +78,13 @@ impl fmt::Show for NodeInfo {
 }
 
 pub struct UnsafeVisitor<'tcx> {
-    priv tcx: &'tcx ty::ctxt,
+    tcx: &'tcx ty::ctxt,
 
     /// The method map.
-    priv method_map: MethodMap,
+    method_map: MethodMap,
     /// Whether we're in an unsafe context.
-    priv node_info: Option<(ast::NodeId, NodeInfo)>,
-    unsafes: TreeMap<ast::NodeId, NodeInfo>,
+    node_info: Option<(ast::NodeId, NodeInfo)>,
+    pub unsafes: TreeMap<ast::NodeId, NodeInfo>,
 }
 
 impl<'tcx> UnsafeVisitor<'tcx> {

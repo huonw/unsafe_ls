@@ -1,5 +1,5 @@
-#[crate_id="unsafe_ls"];
-#[feature(managed_boxes, macro_rules)];
+#![crate_id="unsafe_ls"]
+#![feature(managed_boxes, macro_rules)]
 
 extern crate collections;
 extern crate getopts;
