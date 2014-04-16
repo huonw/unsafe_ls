@@ -19,8 +19,8 @@ enum UnsafeContext {
 
 fn type_is_unsafe_function(ty: ty::t) -> bool {
     match ty::get(ty).sty {
-        ty::ty_bare_fn(ref f) => f.purity == ast::UnsafeFn,
-        ty::ty_closure(ref f) => f.purity == ast::UnsafeFn,
+        ty::ty_bare_fn(ref f) => f.fn_style == ast::UnsafeFn,
+        ty::ty_closure(ref f) => f.fn_style == ast::UnsafeFn,
         _ => false,
     }
 }
@@ -113,7 +113,7 @@ impl<'tcx> Visitor<()> for UnsafeVisitor<'tcx> {
             visit::FkItemFn(_, _, purity, _) =>
                 (true, purity == ast::UnsafeFn),
             visit::FkMethod(_, _, method) =>
-                (true, method.purity == ast::UnsafeFn),
+                (true, method.fn_style == ast::UnsafeFn),
             _ => (false, false),
         };
 
