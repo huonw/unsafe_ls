@@ -8,7 +8,6 @@ extern crate rustc;
 
 use rustc::driver::{driver, session};
 use rustc::middle::ty;
-use rustc::middle::typeck::MethodMap;
 use syntax::ast;
 use std::os;
 use collections::HashSet;
@@ -41,10 +40,10 @@ fn main() {
     libs.insert(Path::new(DEFAULT_LIB_DIR));
 
     for name in matches.free.iter() {
-        let (krate, tcx, method_map) = get_ast(Path::new(name.as_slice()), libs.clone());
+        let (krate, tcx) = get_ast(Path::new(name.as_slice()), libs.clone());
         let cm = tcx.sess.codemap();
 
-        let mut visitor = visitor::UnsafeVisitor::new(&tcx, method_map);
+        let mut visitor = visitor::UnsafeVisitor::new(&tcx);
         visitor.check_crate(&krate);
 
         for (_, info) in visitor.unsafes.iter() {
@@ -113,7 +112,7 @@ fn main() {
 
 /// Extract the expanded ast of a krate, along with the codemap which
 /// connects source code locations to the actual code.
-fn get_ast(path: Path, libs: HashSet<Path>) -> (ast::Crate, ty::ctxt, MethodMap) {
+fn get_ast(path: Path, libs: HashSet<Path>) -> (ast::Crate, ty::ctxt) {
     use syntax::diagnostic;
 
     // cargo culted from rustdoc_ng :(
@@ -142,6 +141,6 @@ fn get_ast(path: Path, libs: HashSet<Path>) -> (ast::Crate, ty::ctxt, MethodMap)
                                              &from_str("unsafe_ls").unwrap())
     };
     let res = driver::phase_3_run_analysis_passes(sess, &krate, ast_map);
-    let driver::CrateAnalysis { ty_cx, maps, .. } = res;
-    (krate, ty_cx, maps.method_map)
+    let driver::CrateAnalysis { ty_cx, .. } = res;
+    (krate, ty_cx)
 }

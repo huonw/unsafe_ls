@@ -1,5 +1,5 @@
 use rustc::middle::ty;
-use rustc::middle::typeck::{MethodCall, MethodMap};
+use rustc::middle::typeck::MethodCall;
 
 use syntax::{ast, ast_util, ast_map};
 use syntax::codemap::Span;
@@ -80,18 +80,15 @@ impl fmt::Show for NodeInfo {
 pub struct UnsafeVisitor<'tcx> {
     tcx: &'tcx ty::ctxt,
 
-    /// The method map.
-    method_map: MethodMap,
     /// Whether we're in an unsafe context.
     node_info: Option<(ast::NodeId, NodeInfo)>,
     pub unsafes: TreeMap<ast::NodeId, NodeInfo>,
 }
 
 impl<'tcx> UnsafeVisitor<'tcx> {
-    pub fn new(tcx: &'tcx ty::ctxt, method_map: MethodMap) -> UnsafeVisitor<'tcx> {
+    pub fn new(tcx: &'tcx ty::ctxt) -> UnsafeVisitor<'tcx> {
         UnsafeVisitor {
             tcx: tcx,
-            method_map: method_map,
             node_info: None,
             unsafes: TreeMap::new(),
         }
@@ -110,8 +107,8 @@ impl<'tcx> Visitor<()> for UnsafeVisitor<'tcx> {
     fn visit_fn(&mut self, fn_kind: &visit::FnKind, fn_decl: &ast::FnDecl,
                 block: &ast::Block, span: Span, node_id: ast::NodeId, _:()) {
         let (is_item_fn, is_unsafe_fn) = match *fn_kind {
-            visit::FkItemFn(_, _, purity, _) =>
-                (true, purity == ast::UnsafeFn),
+            visit::FkItemFn(_, _, fn_style, _) =>
+                (true, fn_style == ast::UnsafeFn),
             visit::FkMethod(_, _, method) =>
                 (true, method.fn_style == ast::UnsafeFn),
             _ => (false, false),
@@ -163,7 +160,7 @@ impl<'tcx> Visitor<()> for UnsafeVisitor<'tcx> {
             match expr.node {
                 ast::ExprMethodCall(_, _, _) => {
                     let method_call = MethodCall::expr(expr.id);
-                    let base_type = self.method_map.borrow().get(&method_call).ty;
+                    let base_type = self.tcx.method_map.borrow().get(&method_call).ty;
                     if type_is_unsafe_function(base_type) {
                         self.info().unsafe_call.push(expr.span)
                     }
