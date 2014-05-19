@@ -6,7 +6,7 @@ extern crate getopts;
 extern crate syntax;
 extern crate rustc;
 
-use rustc::driver::{driver, session};
+use rustc::driver::{driver, session, config};
 use rustc::middle::ty;
 use syntax::ast;
 use std::os;
@@ -17,25 +17,26 @@ mod visitor;
 static DEFAULT_LIB_DIR: &'static str = "/usr/local/lib/rustlib/x86_64-unknown-linux-gnu/lib";
 
 fn main() {
-    let args = std::os::args();
-    let opts = ~[getopts::optflag("h", "help", "show this help message"),
-                 getopts::optflag("n", "nonffi",
-                                  "print `unsafe`s that include non-FFI unsafe behaviours"),
-                 getopts::optflag("f", "ffi", "print `unsafe`s that do FFI calls"),
-                 getopts::optmulti("L", "library-path",
-                                   "directories to add to crate search path", "DIR")];
+    let args: Vec<_> = std::os::args().move_iter().map(|s| s.to_strbuf()).collect();
+    let opts = [getopts::optflag("h", "help", "show this help message"),
+                getopts::optflag("n", "nonffi",
+                                 "print `unsafe`s that include non-FFI unsafe behaviours"),
+                getopts::optflag("f", "ffi", "print `unsafe`s that do FFI calls"),
+                getopts::optmulti("L", "library-path",
+                                  "directories to add to crate search path", "DIR")];
 
     let matches = getopts::getopts(args.tail(), opts).unwrap();
-    if matches.opts_present([~"h", ~"help"]) {
+    if matches.opt_present("help") {
         println!("{}",
-                 getopts::usage(args[0] + " - find all unsafe blocks and print the \
+                 getopts::usage(args.get(0).as_slice() +
+                                " - find all unsafe blocks and print the \
                                 unsafe actions within them",
                                 opts));
         return;
     }
 
-    let nonffi = matches.opts_present([~"n", ~"nonffi"]);
-    let ffi = matches.opts_present([~"f", ~"ffi"]);
+    let nonffi = matches.opt_present("nonffi");
+    let ffi = matches.opt_present("ffi");
     let mut libs: HashSet<Path> = matches.opt_strs("L").move_iter().map(|s| Path::new(s)).collect();
     libs.insert(Path::new(DEFAULT_LIB_DIR));
 
@@ -118,20 +119,20 @@ fn get_ast(path: Path, libs: HashSet<Path>) -> (ast::Crate, ty::ctxt) {
     // cargo culted from rustdoc_ng :(
     let input = driver::FileInput(path);
 
-    let sessopts = session::Options {
+    let sessopts = config::Options {
         maybe_sysroot: Some(os::self_exe_path().unwrap().dir_path()),
         addl_lib_search_paths: std::cell::RefCell::new(libs),
-        .. session::basic_options().clone()
+        .. config::basic_options().clone()
     };
 
     let codemap = syntax::codemap::CodeMap::new();
-    let diagnostic_handler = diagnostic::default_handler();
+    let diagnostic_handler = diagnostic::default_handler(diagnostic::Auto);
     let span_diagnostic_handler =
         diagnostic::mk_span_handler(diagnostic_handler, codemap);
 
-    let sess = driver::build_session_(sessopts, None, span_diagnostic_handler);
+    let sess = session::build_session_(sessopts, None, span_diagnostic_handler);
 
-    let cfg = driver::build_configuration(&sess);
+    let cfg = config::build_configuration(&sess);
 
     let krate = driver::phase_1_parse_input(&sess, cfg, &input);
     let (krate, ast_map) = {

@@ -58,11 +58,11 @@ impl fmt::Show for NodeInfo {
         macro_rules! p ( ($fmt: tt, $name: ident) => {
                 if !self.$name.is_empty() {
                     if !first {
-                        try!(fmt.buf.write_str(", "));
+                        try!(write!(fmt, ", "));
                     } else {
                         first = false
                     }
-                    try!(write!(fmt.buf, concat!("{} ", $fmt), self.$name.len()))
+                    try!(write!(fmt, concat!("{} ", $fmt), self.$name.len()))
                 }
             })
         p!("asm", asm);
@@ -121,7 +121,7 @@ impl<'tcx> Visitor<()> for UnsafeVisitor<'tcx> {
         } else {
             None
         };
-        visit::walk_fn(self, fn_kind, fn_decl, block, span, node_id, ());
+        visit::walk_fn(self, fn_kind, fn_decl, block, span, ());
 
         match replace(&mut self.node_info, old_node_info) {
             Some((id, info)) => assert!(self.unsafes.insert(id, info)),
