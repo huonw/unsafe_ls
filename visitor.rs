@@ -34,6 +34,11 @@ pub struct NodeInfo {
     pub static_mut: Vec<Span>,
     pub unsafe_call: Vec<Span>,
     pub transmute: Vec<Span>,
+    pub transmute_imm_to_mut: Vec<Span>,
+
+    // these are only picked up with written in unsafe blocks, but *
+    // as *mut is legal anywhere.
+    pub cast_raw_ptr_imm_to_mut: Vec<Span>,
     pub asm: Vec<Span>,
 }
 
@@ -48,6 +53,8 @@ impl NodeInfo {
             static_mut: Vec::new(),
             unsafe_call: Vec::new(),
             transmute: Vec::new(),
+            transmute_imm_to_mut: Vec::new(),
+            cast_raw_ptr_imm_to_mut: Vec::new(),
             asm: Vec::new()
         }
     }
@@ -70,6 +77,8 @@ impl fmt::Show for NodeInfo {
         p!("ffi", ffi);
         p!("static mut", static_mut);
         p!("transmute", transmute);
+        p!("transmute & to &mut", transmute_imm_to_mut);
+        p!("cast * to *mut", cast_raw_ptr_imm_to_mut);
         p!("unsafe call", unsafe_call);
         // silence dead assign warning
         if first {}
@@ -100,6 +109,29 @@ impl<'tcx> UnsafeVisitor<'tcx> {
 
     fn info<'a>(&'a mut self) -> &'a mut NodeInfo {
         self.node_info.get_mut_ref().mut1()
+    }
+
+    fn check_ptr_cast(&mut self, span: Span, from: &ast::Expr, to: &ast::Expr) -> bool {
+        let from_ty = ty::expr_ty(self.tcx, from);
+        let to_ty = ty::expr_ty(self.tcx, to);
+
+        match (&ty::get(from_ty).sty, &ty::get(to_ty).sty) {
+            (&ty::ty_rptr(_, ty::mt { mutbl: ast::MutImmutable, .. }),
+             &ty::ty_rptr(_, ty::mt { mutbl: ast::MutMutable, .. })) => {
+                self.info().transmute_imm_to_mut.push(span);
+                true
+            }
+
+            (&ty::ty_ptr(ty::mt { mutbl: ast::MutImmutable, .. }),
+             &ty::ty_ptr(ty::mt { mutbl: ast::MutMutable, .. })) => {
+                self.info().cast_raw_ptr_imm_to_mut.push(span);
+                true
+            }
+
+            _ => {
+                false
+            }
+        }
     }
 }
 
@@ -165,20 +197,26 @@ impl<'tcx> Visitor<()> for UnsafeVisitor<'tcx> {
                         self.info().unsafe_call.push(expr.span)
                     }
                 }
-                ast::ExprCall(base, _) => {
-                    match base.node {
-                        ast::ExprPath(ref p)
+                ast::ExprCall(base, ref args) => {
+                    match (&base.node, args.as_slice()) {
+                        (&ast::ExprPath(ref p), [ref arg])
                             // ew, but whatever.
                             if p.segments.last().unwrap().identifier.name ==
                             token::intern("transmute") => {
-                            self.info().transmute.push(expr.span)
-                        }
+                                if !self.check_ptr_cast(expr.span, *arg, expr) {
+                                    // not a */& -> *mut/&mut cast.
+                                    self.info().transmute.push(expr.span)
+                                }
+                            }
+
                         _ => {
                             match self.tcx.def_map.borrow().find(&base.id) {
                                 Some(&ast::DefFn(did, ast::UnsafeFn)) => {
                                     if ast_util::is_local(did) {
                                         match self.tcx.map.get(did.node) {
-                                            ast_map::NodeForeignItem(_) => self.info().ffi.push(expr.span),
+                                            ast_map::NodeForeignItem(_) => {
+                                                self.info().ffi.push(expr.span)
+                                            }
                                             _ => self.info().unsafe_call.push(expr.span)
                                         }
                                     } else {
@@ -197,6 +235,7 @@ impl<'tcx> Visitor<()> for UnsafeVisitor<'tcx> {
                         }
                     }
                 }
+
                 ast::ExprUnary(ast::UnDeref, base) => {
                     let base_type = ty::node_id_to_type(self.tcx, base.id);
                     match ty::get(base_type).sty {
@@ -216,6 +255,9 @@ impl<'tcx> Visitor<()> for UnsafeVisitor<'tcx> {
                         }
                         _ => {}
                     }
+                }
+                ast::ExprCast(from, _) => {
+                    self.check_ptr_cast(expr.span, from, expr);
                 }
                 _ => {}
             }

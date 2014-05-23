@@ -55,7 +55,9 @@ fn main() {
                 + info.static_mut.len()
                 + info.unsafe_call.len()
                 + info.asm.len()
-                + info.transmute.len();
+                + info.transmute.len()
+                + info.transmute_imm_to_mut.len()
+                + info.cast_raw_ptr_imm_to_mut.len();
 
             let f = info.ffi.len();
 
@@ -66,7 +68,9 @@ fn main() {
                 if nonffi {
                     for vv in [&info.raw_deref, &info.static_mut,
                                &info.unsafe_call, &info.asm,
-                               &info.transmute].iter() {
+                               &info.transmute,
+                               &info.transmute_imm_to_mut,
+                               &info.cast_raw_ptr_imm_to_mut].iter() {
                         for s in vv.as_slice().iter() {
                             v.push(*s)
                         }
