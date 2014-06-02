@@ -5,11 +5,13 @@ extern crate collections;
 extern crate getopts;
 extern crate syntax;
 extern crate rustc;
+extern crate sync;
 
 use rustc::driver::{driver, session, config};
 use rustc::middle::ty;
 use syntax::ast;
-use std::os;
+use std::{os, task};
+use sync::Arc;
 use collections::HashSet;
 
 mod visitor;
@@ -17,7 +19,7 @@ mod visitor;
 static DEFAULT_LIB_DIR: &'static str = "/usr/local/lib/rustlib/x86_64-unknown-linux-gnu/lib";
 
 fn main() {
-    let args: Vec<_> = std::os::args().move_iter().map(|s| s.to_strbuf()).collect();
+    let args: Vec<_> = std::os::args();
     let opts = [getopts::optflag("h", "help", "show this help message"),
                 getopts::optflag("n", "nonffi",
                                  "print `unsafe`s that include non-FFI unsafe behaviours"),
@@ -28,10 +30,11 @@ fn main() {
     let matches = getopts::getopts(args.tail(), opts).unwrap();
     if matches.opt_present("help") {
         println!("{}",
-                 getopts::usage(args.get(0).as_slice() +
-                                " - find all unsafe blocks and print the \
-                                unsafe actions within them",
-                                opts));
+                 getopts::usage(
+                     args.get(0).clone()
+                         .append(" - find all unsafe blocks and print the \
+                                unsafe actions within them").as_slice(),
+                     opts));
         return;
     }
 
@@ -40,8 +43,31 @@ fn main() {
     let mut libs: HashSet<Path> = matches.opt_strs("L").move_iter().map(|s| Path::new(s)).collect();
     libs.insert(Path::new(DEFAULT_LIB_DIR));
 
+    let session = Arc::new(Session {
+        nonffi: nonffi,
+        ffi: ffi,
+        libs: libs
+    });
+
     for name in matches.free.iter() {
-        let (krate, tcx) = get_ast(Path::new(name.as_slice()), libs.clone());
+        let sess = session.clone();
+        let name = Path::new(name.as_slice());
+        task::try(proc() {
+            sess.run_library(name);
+        }).unwrap();
+    }
+}
+
+
+struct Session {
+    nonffi: bool,
+    ffi: bool,
+    libs: HashSet<Path>
+}
+
+impl Session {
+    fn run_library(&self, path: Path) {
+        let (krate, tcx) = get_ast(path, self.libs.clone());
         let cm = tcx.sess.codemap();
 
         let mut visitor = visitor::UnsafeVisitor::new(&tcx);
@@ -61,11 +87,11 @@ fn main() {
 
             let f = info.ffi.len();
 
-            if (nonffi && n > 0) || (ffi && f > 0) {
+            if (self.nonffi && n > 0) || (self.ffi && f > 0) {
                 use syntax::codemap::Pos;
 
                 let mut v = Vec::new();
-                if nonffi {
+                if self.nonffi {
                     for vv in [&info.raw_deref, &info.static_mut,
                                &info.unsafe_call, &info.asm,
                                &info.transmute,
@@ -76,7 +102,7 @@ fn main() {
                         }
                     }
                 }
-                if ffi {
+                if self.ffi {
                     for s in info.ffi.as_slice().iter() {
                         v.push(*s)
                     }
@@ -91,8 +117,8 @@ fn main() {
                          if info.is_fn {"fn"} else {"block"},
                          *info);
 
-                // and the the individual unsafe actions within each
-                // block (in sorted order)
+                // and the individual unsafe actions within each block
+                // (in source order)
                 v.as_mut_slice().sort_by(|a, b| a.lo.to_uint().cmp(&b.lo.to_uint()));
 
                 let mut seen = HashSet::new();
