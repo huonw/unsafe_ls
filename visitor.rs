@@ -1,4 +1,4 @@
-use rustc::middle::ty;
+use rustc::middle::{ty, def};
 use rustc::middle::typeck::MethodCall;
 
 use syntax::{ast, ast_util, ast_map};
@@ -9,9 +9,9 @@ use syntax::visit::Visitor;
 
 use std::fmt;
 use std::mem::replace;
-use collections::treemap::TreeMap;
+use std::collections::treemap::TreeMap;
 
-#[deriving(Eq)]
+#[deriving(PartialEq, Eq)]
 enum UnsafeContext {
     Safe,
     Unsafe(ast::NodeId),
@@ -211,7 +211,7 @@ impl<'tcx> Visitor<()> for UnsafeVisitor<'tcx> {
 
                         _ => {
                             match self.tcx.def_map.borrow().find(&base.id) {
-                                Some(&ast::DefFn(did, ast::UnsafeFn)) => {
+                                Some(&def::DefFn(did, ast::UnsafeFn)) => {
                                     if ast_util::is_local(did) {
                                         match self.tcx.map.get(did.node) {
                                             ast_map::NodeForeignItem(_) => {
@@ -250,7 +250,7 @@ impl<'tcx> Visitor<()> for UnsafeVisitor<'tcx> {
                 }
                 ast::ExprPath(..) => {
                     match ty::resolve_expr(self.tcx, expr) {
-                        ast::DefStatic(_, true) => {
+                        def::DefStatic(_, true) => {
                             self.info().static_mut.push(expr.span)
                         }
                         _ => {}
