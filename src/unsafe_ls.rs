@@ -51,9 +51,9 @@ fn main() {
     for name in matches.free.iter() {
         let sess = session.clone();
         let name = Path::new(name.as_slice());
-        task::try(proc() {
+        let _ = task::try(proc() {
             sess.run_library(name);
-        }).unwrap();
+        });
     }
 }
 
@@ -164,8 +164,8 @@ fn get_ast(path: Path, libs: HashSet<Path>) -> (ast::Crate, ty::ctxt) {
     let cfg = config::build_configuration(&sess);
 
     let krate = driver::phase_1_parse_input(&sess, cfg, &input);
-    let (krate, ast_map) = driver::phase_2_configure_and_expand(&sess, krate,
-                                                                &from_str("unsafe_ls").unwrap());
+    let (krate, ast_map) = driver::phase_2_configure_and_expand(
+        &sess, krate, &from_str("unsafe_ls").unwrap()).unwrap();
 
     let res = driver::phase_3_run_analysis_passes(sess, &krate, ast_map);
     let driver::CrateAnalysis { ty_cx, .. } = res;
