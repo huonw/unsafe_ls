@@ -57,9 +57,9 @@ See `unsafe_ls -h` for all flags.
 
 ## Building
 
-    rustc -O bin.rs
+    cargo build
 
-Known to work with Rust master at 7ec7805.
+Known to work with Rust master at e6c54a1.
 
 ## Testimonials
 
