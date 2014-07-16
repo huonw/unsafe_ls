@@ -1,4 +1,4 @@
-#![crate_id="unsafe_ls"]
+#![crate_name = "unsafe_ls"]
 #![feature(managed_boxes, macro_rules)]
 
 extern crate getopts;
@@ -144,6 +144,7 @@ impl Session {
 /// connects source code locations to the actual code.
 fn get_ast(path: Path, libs: HashSet<Path>) -> (ast::Crate, ty::ctxt) {
     use syntax::diagnostic;
+    use rustc::back::link;
 
     // cargo culted from rustdoc_ng :(
     let input = driver::FileInput(path);
@@ -155,7 +156,8 @@ fn get_ast(path: Path, libs: HashSet<Path>) -> (ast::Crate, ty::ctxt) {
     };
 
     let codemap = syntax::codemap::CodeMap::new();
-    let diagnostic_handler = diagnostic::default_handler(diagnostic::Auto);
+    let diagnostic_handler =
+        diagnostic::default_handler(diagnostic::Auto, None);
     let span_diagnostic_handler =
         diagnostic::mk_span_handler(diagnostic_handler, codemap);
 
@@ -164,10 +166,12 @@ fn get_ast(path: Path, libs: HashSet<Path>) -> (ast::Crate, ty::ctxt) {
     let cfg = config::build_configuration(&sess);
 
     let krate = driver::phase_1_parse_input(&sess, cfg, &input);
+    let id = link::find_crate_name(Some(&sess), krate.attrs.as_slice(),
+                                   &input);
     let (krate, ast_map) = driver::phase_2_configure_and_expand(
-        &sess, krate, &from_str("unsafe_ls").unwrap()).unwrap();
+        &sess, krate, id.as_slice()).unwrap();
 
-    let res = driver::phase_3_run_analysis_passes(sess, &krate, ast_map);
+    let res = driver::phase_3_run_analysis_passes(sess, &krate, ast_map, id);
     let driver::CrateAnalysis { ty_cx, .. } = res;
     (krate, ty_cx)
 }

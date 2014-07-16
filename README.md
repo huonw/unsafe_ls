@@ -59,7 +59,7 @@ See `unsafe_ls -h` for all flags.
 
     cargo build
 
-Known to work with Rust master at e6c54a1.
+Known to work with Rust master at 5cef16e.
 
 ## Testimonials
 
