@@ -169,7 +169,7 @@ fn get_ast(path: Path, libs: HashSet<Path>) -> (ast::Crate, ty::ctxt) {
     let id = link::find_crate_name(Some(&sess), krate.attrs.as_slice(),
                                    &input);
     let (krate, ast_map) = driver::phase_2_configure_and_expand(
-        &sess, krate, id.as_slice()).unwrap();
+        &sess, krate, id.as_slice(), None).unwrap();
 
     let res = driver::phase_3_run_analysis_passes(sess, &krate, ast_map, id);
     let driver::CrateAnalysis { ty_cx, .. } = res;

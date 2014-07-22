@@ -2,6 +2,7 @@ use rustc::middle::{ty, def};
 use rustc::middle::typeck::MethodCall;
 
 use syntax::{ast, ast_util, ast_map};
+use syntax::ast_util::PostExpansionMethod;
 use syntax::codemap::Span;
 use syntax::parse::token;
 use syntax::visit;
@@ -142,7 +143,7 @@ impl<'tcx> Visitor<()> for UnsafeVisitor<'tcx> {
             visit::FkItemFn(_, _, fn_style, _) =>
                 (true, fn_style == ast::UnsafeFn),
             visit::FkMethod(_, _, method) =>
-                (true, ast_util::method_fn_style(method) == ast::UnsafeFn),
+                (true, method.pe_fn_style() == ast::UnsafeFn),
             _ => (false, false),
         };
 
@@ -203,7 +204,7 @@ impl<'tcx> Visitor<()> for UnsafeVisitor<'tcx> {
                             // ew, but whatever.
                             if p.segments.last().unwrap().identifier.name ==
                             token::intern("transmute") => {
-                                if !self.check_ptr_cast(expr.span, *arg, expr) {
+                                if !self.check_ptr_cast(expr.span, &**arg, expr) {
                                     // not a */& -> *mut/&mut cast.
                                     self.info().transmute.push(expr.span)
                                 }
@@ -257,7 +258,7 @@ impl<'tcx> Visitor<()> for UnsafeVisitor<'tcx> {
                     }
                 }
                 ast::ExprCast(from, _) => {
-                    self.check_ptr_cast(expr.span, from, expr);
+                    self.check_ptr_cast(expr.span, &*from, expr);
                 }
                 _ => {}
             }

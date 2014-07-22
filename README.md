@@ -57,9 +57,9 @@ See `unsafe_ls -h` for all flags.
 
 ## Building
 
-    cargo build
+    cargo build --release
 
-Known to work with Rust master at 5cef16e.
+Known to work with Rust master at aa0e35bc6 2014-07-22.
 
 ## Testimonials
 
