@@ -1,14 +1,16 @@
 #![crate_name = "unsafe_ls"]
 #![feature(managed_boxes, macro_rules)]
 
+extern crate arena;
 extern crate getopts;
 extern crate syntax;
 extern crate rustc;
 extern crate sync;
 
+use arena::TypedArena;
 use rustc::driver::{driver, session, config};
 use rustc::middle::ty;
-use syntax::ast;
+use syntax::ast_map;
 use std::{os, task};
 use sync::Arc;
 use std::collections::HashSet;
@@ -39,8 +41,8 @@ fn main() {
 
     let nonffi = matches.opt_present("nonffi");
     let ffi = matches.opt_present("ffi");
-    let mut libs: HashSet<Path> = matches.opt_strs("L").move_iter().map(|s| Path::new(s)).collect();
-    libs.insert(Path::new(DEFAULT_LIB_DIR));
+    let mut libs: Vec<Path> = matches.opt_strs("L").into_iter().map(|s| Path::new(s)).collect();
+    libs.push(Path::new(DEFAULT_LIB_DIR));
 
     let session = Arc::new(Session {
         nonffi: nonffi,
@@ -61,88 +63,89 @@ fn main() {
 struct Session {
     nonffi: bool,
     ffi: bool,
-    libs: HashSet<Path>
+    libs: Vec<Path>
 }
 
 impl Session {
     fn run_library(&self, path: Path) {
-        let (krate, tcx) = get_ast(path, self.libs.clone());
-        let cm = tcx.sess.codemap();
+        get_ast(path, self.libs.clone(), |tcx| {
+            let cm = tcx.sess.codemap();
 
-        let mut visitor = visitor::UnsafeVisitor::new(&tcx);
-        visitor.check_crate(&krate);
+            let mut visitor = visitor::UnsafeVisitor::new(&tcx);
+            visitor.check_crate(tcx.map.krate());
 
-        for (_, info) in visitor.unsafes.iter() {
-            // compiler generated block, so we don't care.
-            if info.compiler { continue }
+            for (_, info) in visitor.unsafes.iter() {
+                // compiler generated block, so we don't care.
+                if info.compiler { continue }
 
-            let n = info.raw_deref.len()
-                + info.static_mut.len()
-                + info.unsafe_call.len()
-                + info.asm.len()
-                + info.transmute.len()
-                + info.transmute_imm_to_mut.len()
-                + info.cast_raw_ptr_imm_to_mut.len();
+                let n = info.raw_deref.len()
+                    + info.static_mut.len()
+                    + info.unsafe_call.len()
+                    + info.asm.len()
+                    + info.transmute.len()
+                    + info.transmute_imm_to_mut.len()
+                    + info.cast_raw_ptr_imm_to_mut.len();
 
-            let f = info.ffi.len();
+                let f = info.ffi.len();
 
-            if (self.nonffi && n > 0) || (self.ffi && f > 0) {
-                use syntax::codemap::Pos;
+                if (self.nonffi && n > 0) || (self.ffi && f > 0) {
+                    use syntax::codemap::Pos;
 
-                let mut v = Vec::new();
-                if self.nonffi {
-                    for vv in [&info.raw_deref, &info.static_mut,
-                               &info.unsafe_call, &info.asm,
-                               &info.transmute,
-                               &info.transmute_imm_to_mut,
-                               &info.cast_raw_ptr_imm_to_mut].iter() {
-                        for s in vv.as_slice().iter() {
+                    let mut v = Vec::new();
+                    if self.nonffi {
+                        for vv in [&info.raw_deref, &info.static_mut,
+                                   &info.unsafe_call, &info.asm,
+                                   &info.transmute,
+                                   &info.transmute_imm_to_mut,
+                                   &info.cast_raw_ptr_imm_to_mut].iter() {
+                            for s in vv.as_slice().iter() {
+                                v.push(*s)
+                            }
+                        }
+                    }
+                    if self.ffi {
+                        for s in info.ffi.as_slice().iter() {
                             v.push(*s)
                         }
                     }
-                }
-                if self.ffi {
-                    for s in info.ffi.as_slice().iter() {
-                        v.push(*s)
-                    }
-                }
 
-                let lo = cm.lookup_char_pos_adj(info.span.lo);
+                    let lo = cm.lookup_char_pos_adj(info.span.lo);
 
-                // print the summary line
-                println!("{}:{}:{}: {} with {}",
-                         lo.filename,
-                         lo.line, lo.col.to_uint() + 1,
-                         if info.is_fn {"fn"} else {"block"},
-                         *info);
+                    // print the summary line
+                    println!("{}:{}:{}: {} with {}",
+                             lo.filename,
+                             lo.line, lo.col.to_uint() + 1,
+                             if info.is_fn {"fn"} else {"block"},
+                             *info);
 
-                // and the individual unsafe actions within each block
-                // (in source order)
-                v.as_mut_slice().sort_by(|a, b| a.lo.to_uint().cmp(&b.lo.to_uint()));
+                    // and the individual unsafe actions within each block
+                    // (in source order)
+                    v.as_mut_slice().sort_by(|a, b| a.lo.to_uint().cmp(&b.lo.to_uint()));
 
-                let mut seen = HashSet::new();
-                for s in v.as_slice().iter() {
-                    let lines = cm.span_to_lines(*s);
-                    match lines.lines.as_slice() {
-                        [line_num, ..] => {
-                            let t = (line_num, lines.file.name.clone());
-                            if !seen.contains(&t) {
-                                seen.insert(t);
-                                let line = lines.file.get_line(line_num as int);
-                                println!("{}", line);
+                    let mut seen = HashSet::new();
+                    for s in v.as_slice().iter() {
+                        let lines = cm.span_to_lines(*s);
+                        match lines.lines.as_slice() {
+                            [line_num, ..] => {
+                                let t = (line_num, lines.file.name.clone());
+                                if !seen.contains(&t) {
+                                    seen.insert(t);
+                                    let line = lines.file.get_line(line_num as int);
+                                    println!("{}", line);
+                                }
                             }
+                            _ => { println!("no lines"); }
                         }
-                        _ => { println!("no lines"); }
                     }
                 }
             }
-        }
+        })
     }
 }
 
 /// Extract the expanded ast of a krate, along with the codemap which
 /// connects source code locations to the actual code.
-fn get_ast(path: Path, libs: HashSet<Path>) -> (ast::Crate, ty::ctxt) {
+fn get_ast<T>(path: Path, libs: Vec<Path>, f: |ty::ctxt| -> T) -> T {
     use syntax::diagnostic;
     use rustc::back::link;
 
@@ -168,10 +171,12 @@ fn get_ast(path: Path, libs: HashSet<Path>) -> (ast::Crate, ty::ctxt) {
     let krate = driver::phase_1_parse_input(&sess, cfg, &input);
     let id = link::find_crate_name(Some(&sess), krate.attrs.as_slice(),
                                    &input);
-    let (krate, ast_map) = driver::phase_2_configure_and_expand(
+    let krate = driver::phase_2_configure_and_expand(
         &sess, krate, id.as_slice(), None).unwrap();
-
-    let res = driver::phase_3_run_analysis_passes(sess, &krate, ast_map, id);
+    let mut forest = ast_map::Forest::new(krate);
+    let ast_map = driver::assign_node_ids_and_map(&sess, &mut forest);
+    let type_arena = TypedArena::new();
+    let res = driver::phase_3_run_analysis_passes(sess, ast_map, &type_arena, id);
     let driver::CrateAnalysis { ty_cx, .. } = res;
-    (krate, ty_cx)
+    f(ty_cx)
 }

@@ -87,16 +87,16 @@ impl fmt::Show for NodeInfo {
     }
 }
 
-pub struct UnsafeVisitor<'tcx> {
-    tcx: &'tcx ty::ctxt,
+pub struct UnsafeVisitor<'tcx, 'a: 'tcx> {
+    tcx: &'tcx ty::ctxt<'a>,
 
     /// Whether we're in an unsafe context.
     node_info: Option<(ast::NodeId, NodeInfo)>,
     pub unsafes: TreeMap<ast::NodeId, NodeInfo>,
 }
 
-impl<'tcx> UnsafeVisitor<'tcx> {
-    pub fn new(tcx: &'tcx ty::ctxt) -> UnsafeVisitor<'tcx> {
+impl<'tcx, 'a> UnsafeVisitor<'tcx, 'a> {
+    pub fn new(tcx: &'tcx ty::ctxt<'a>) -> UnsafeVisitor<'tcx, 'a> {
         UnsafeVisitor {
             tcx: tcx,
             node_info: None,
@@ -105,11 +105,11 @@ impl<'tcx> UnsafeVisitor<'tcx> {
     }
 
     pub fn check_crate(&mut self, krate: &ast::Crate) {
-        visit::walk_crate(self, krate, ())
+        visit::walk_crate(self, krate)
     }
 
     fn info<'a>(&'a mut self) -> &'a mut NodeInfo {
-        self.node_info.get_mut_ref().mut1()
+        self.node_info.as_mut().unwrap().mut1()
     }
 
     fn check_ptr_cast(&mut self, span: Span, from: &ast::Expr, to: &ast::Expr) -> bool {
@@ -136,10 +136,10 @@ impl<'tcx> UnsafeVisitor<'tcx> {
     }
 }
 
-impl<'tcx> Visitor<()> for UnsafeVisitor<'tcx> {
-    fn visit_fn(&mut self, fn_kind: &visit::FnKind, fn_decl: &ast::FnDecl,
-                block: &ast::Block, span: Span, node_id: ast::NodeId, _:()) {
-        let (is_item_fn, is_unsafe_fn) = match *fn_kind {
+impl<'tcx,'a,'b> Visitor<'a> for UnsafeVisitor<'tcx,'b> {
+    fn visit_fn(&mut self, fn_kind: visit::FnKind<'a>, fn_decl: &'a ast::FnDecl,
+                block: &ast::Block, span: Span, node_id: ast::NodeId) {
+        let (is_item_fn, is_unsafe_fn) = match fn_kind {
             visit::FkItemFn(_, _, fn_style, _) =>
                 (true, fn_style == ast::UnsafeFn),
             visit::FkMethod(_, _, method) =>
@@ -154,7 +154,7 @@ impl<'tcx> Visitor<()> for UnsafeVisitor<'tcx> {
         } else {
             None
         };
-        visit::walk_fn(self, fn_kind, fn_decl, block, span, ());
+        visit::walk_fn(self, fn_kind, fn_decl, block, span);
 
         match replace(&mut self.node_info, old_node_info) {
             Some((id, info)) => assert!(self.unsafes.insert(id, info)),
@@ -163,7 +163,7 @@ impl<'tcx> Visitor<()> for UnsafeVisitor<'tcx> {
         }
     }
 
-    fn visit_block(&mut self, block: &ast::Block, _:()) {
+    fn visit_block(&mut self, block: &'a ast::Block) {
         let (old_node_info, inserted) = match block.rules {
             ast::DefaultBlock => (None, false),
             ast::UnsafeBlock(source) => {
@@ -177,7 +177,7 @@ impl<'tcx> Visitor<()> for UnsafeVisitor<'tcx> {
                 }
             }
         };
-        visit::walk_block(self, block, ());
+        visit::walk_block(self, block);
 
         if inserted {
             match replace(&mut self.node_info, old_node_info) {
@@ -188,17 +188,17 @@ impl<'tcx> Visitor<()> for UnsafeVisitor<'tcx> {
         }
     }
 
-    fn visit_expr(&mut self, expr: &ast::Expr, _:()) {
+    fn visit_expr(&mut self, expr: &'a ast::Expr) {
         if self.node_info.is_some() {
             match expr.node {
                 ast::ExprMethodCall(_, _, _) => {
                     let method_call = MethodCall::expr(expr.id);
-                    let base_type = self.tcx.method_map.borrow().get(&method_call).ty;
+                    let base_type = (*self.tcx.method_map.borrow())[method_call].ty;
                     if type_is_unsafe_function(base_type) {
                         self.info().unsafe_call.push(expr.span)
                     }
                 }
-                ast::ExprCall(base, ref args) => {
+                ast::ExprCall(ref base, ref args) => {
                     match (&base.node, args.as_slice()) {
                         (&ast::ExprPath(ref p), [ref arg])
                             // ew, but whatever.
@@ -237,7 +237,7 @@ impl<'tcx> Visitor<()> for UnsafeVisitor<'tcx> {
                     }
                 }
 
-                ast::ExprUnary(ast::UnDeref, base) => {
+                ast::ExprUnary(ast::UnDeref, ref base) => {
                     let base_type = ty::node_id_to_type(self.tcx, base.id);
                     match ty::get(base_type).sty {
                         ty::ty_ptr(_) => {
@@ -257,12 +257,12 @@ impl<'tcx> Visitor<()> for UnsafeVisitor<'tcx> {
                         _ => {}
                     }
                 }
-                ast::ExprCast(from, _) => {
-                    self.check_ptr_cast(expr.span, &*from, expr);
+                ast::ExprCast(ref from, _) => {
+                    self.check_ptr_cast(expr.span, &**from, expr);
                 }
                 _ => {}
             }
         }
-        visit::walk_expr(self, expr, ());
+        visit::walk_expr(self, expr);
     }
 }
