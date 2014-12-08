@@ -1,18 +1,20 @@
 #![crate_name = "unsafe_ls"]
-#![feature(managed_boxes, macro_rules)]
+#![feature(macro_rules)]
 
 extern crate arena;
 extern crate getopts;
 extern crate syntax;
 extern crate rustc;
-extern crate sync;
+extern crate rustc_back;
+extern crate rustc_trans;
 
 use arena::TypedArena;
-use rustc::driver::{driver, session, config};
+use rustc::session::{mod, config};
+use rustc_trans::driver::driver;
 use rustc::middle::ty;
 use syntax::ast_map;
 use std::{os, task};
-use sync::Arc;
+use std::sync::Arc;
 use std::collections::HashSet;
 
 mod visitor;
@@ -28,14 +30,12 @@ fn main() {
                 getopts::optmulti("L", "library-path",
                                   "directories to add to crate search path", "DIR")];
 
-    let matches = getopts::getopts(args.tail(), opts).unwrap();
+    let matches = getopts::getopts(args.tail(), &opts).unwrap();
     if matches.opt_present("help") {
         println!("{}",
-                 getopts::usage(
-                     args.get(0).clone()
-                         .append(" - find all unsafe blocks and print the \
-                                unsafe actions within them").as_slice(),
-                     opts));
+                 getopts::usage(format!("{} - find all unsafe blocks and print the \
+                                unsafe actions within them", args[0]).as_slice(),
+                     &opts));
         return;
     }
 
@@ -130,7 +130,7 @@ impl Session {
                                 let t = (line_num, lines.file.name.clone());
                                 if !seen.contains(&t) {
                                     seen.insert(t);
-                                    let line = lines.file.get_line(line_num as int);
+                                    let line = lines.file.get_line(line_num).unwrap();
                                     println!("{}", line);
                                 }
                             }
@@ -147,7 +147,7 @@ impl Session {
 /// connects source code locations to the actual code.
 fn get_ast<T>(path: Path, libs: Vec<Path>, f: |ty::ctxt| -> T) -> T {
     use syntax::diagnostic;
-    use rustc::back::link;
+    use rustc_trans::back::link;
 
     // cargo culted from rustdoc_ng :(
     let input = driver::FileInput(path);

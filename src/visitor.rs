@@ -10,16 +10,10 @@ use syntax::visit::Visitor;
 
 use std::fmt;
 use std::mem::replace;
-use std::collections::treemap::TreeMap;
+use std::collections::TreeMap;
 
-#[deriving(PartialEq, Eq)]
-enum UnsafeContext {
-    Safe,
-    Unsafe(ast::NodeId),
-}
-
-fn type_is_unsafe_function(ty: ty::t) -> bool {
-    match ty::get(ty).sty {
+fn type_is_unsafe_function(ty: ty::Ty) -> bool {
+    match ty.sty {
         ty::ty_bare_fn(ref f) => f.fn_style == ast::UnsafeFn,
         ty::ty_closure(ref f) => f.fn_style == ast::UnsafeFn,
         _ => false,
@@ -116,7 +110,7 @@ impl<'tcx, 'a> UnsafeVisitor<'tcx, 'a> {
         let from_ty = ty::expr_ty(self.tcx, from);
         let to_ty = ty::expr_ty(self.tcx, to);
 
-        match (&ty::get(from_ty).sty, &ty::get(to_ty).sty) {
+        match (&from_ty.sty, &to_ty.sty) {
             (&ty::ty_rptr(_, ty::mt { mutbl: ast::MutImmutable, .. }),
              &ty::ty_rptr(_, ty::mt { mutbl: ast::MutMutable, .. })) => {
                 self.info().transmute_imm_to_mut.push(span);
@@ -157,7 +151,7 @@ impl<'tcx,'a,'b> Visitor<'a> for UnsafeVisitor<'tcx,'b> {
         visit::walk_fn(self, fn_kind, fn_decl, block, span);
 
         match replace(&mut self.node_info, old_node_info) {
-            Some((id, info)) => assert!(self.unsafes.insert(id, info)),
+            Some((id, info)) => assert!(self.unsafes.insert(id, info).is_none()),
             //Some((id, info)) => { self.unsafes.insert(id, info); }
             None => {}
         }
@@ -181,7 +175,7 @@ impl<'tcx,'a,'b> Visitor<'a> for UnsafeVisitor<'tcx,'b> {
 
         if inserted {
             match replace(&mut self.node_info, old_node_info) {
-                Some((id, info)) => assert!(self.unsafes.insert(id, info)),
+                Some((id, info)) => assert!(self.unsafes.insert(id, info).is_none()),
                 //Some((id, info)) => { self.unsafes.insert(id, info); }
                 None => {}
             }
@@ -211,26 +205,25 @@ impl<'tcx,'a,'b> Visitor<'a> for UnsafeVisitor<'tcx,'b> {
                             }
 
                         _ => {
-                            match self.tcx.def_map.borrow().find(&base.id) {
-                                Some(&def::DefFn(did, ast::UnsafeFn)) => {
-                                    if ast_util::is_local(did) {
+                            let is_ffi = match self.tcx.def_map.borrow().get(&base.id) {
+                                Some(&def::DefFn(did, _)) => {
+                                    // cross-crate calls are always
+                                    // just unsafe calls.
+                                    ast_util::is_local(did) &&
                                         match self.tcx.map.get(did.node) {
-                                            ast_map::NodeForeignItem(_) => {
-                                                self.info().ffi.push(expr.span)
-                                            }
-                                            _ => self.info().unsafe_call.push(expr.span)
+                                            ast_map::NodeForeignItem(_) => true,
+                                            _ => false
                                         }
-                                    } else {
-                                        // cross-crate calls are always just
-                                        // unsafe calls.
-                                        self.info().unsafe_call.push(expr.span)
-                                    }
                                 }
-                                _ => {
-                                    let base_type = ty::node_id_to_type(self.tcx, base.id);
-                                    if type_is_unsafe_function(base_type) {
-                                        self.info().unsafe_call.push(expr.span)
-                                    }
+                                _ => false
+                            };
+
+                            if is_ffi {
+                                self.info().ffi.push(expr.span)
+                            } else {
+                                let base_type = ty::node_id_to_type(self.tcx, base.id);
+                                if type_is_unsafe_function(base_type) {
+                                    self.info().unsafe_call.push(expr.span)
                                 }
                             }
                         }
@@ -239,7 +232,7 @@ impl<'tcx,'a,'b> Visitor<'a> for UnsafeVisitor<'tcx,'b> {
 
                 ast::ExprUnary(ast::UnDeref, ref base) => {
                     let base_type = ty::node_id_to_type(self.tcx, base.id);
-                    match ty::get(base_type).sty {
+                    match base_type.sty {
                         ty::ty_ptr(_) => {
                             self.info().raw_deref.push(expr.span)
                         }

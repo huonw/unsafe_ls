@@ -6,7 +6,7 @@ unsafe fn foo() {
 fn bar() {
     unsafe {
         std::mem::transmute::<&int, &mut int>(&1);
-        let _ = 0 as *int as *mut int;
+        let _ = 0 as *const  int as *mut int;
     }
 }
 fn main() {
