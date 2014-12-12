@@ -1,5 +1,5 @@
 use rustc::middle::{ty, def};
-use rustc::middle::typeck::MethodCall;
+use rustc::middle::ty::MethodCall;
 
 use syntax::{ast, ast_util, ast_map};
 use syntax::ast_util::PostExpansionMethod;

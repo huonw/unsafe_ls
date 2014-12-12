@@ -6,11 +6,13 @@ extern crate getopts;
 extern crate syntax;
 extern crate rustc;
 extern crate rustc_back;
+extern crate rustc_driver;
 extern crate rustc_trans;
+extern crate rustc_typeck;
 
 use arena::TypedArena;
 use rustc::session::{mod, config};
-use rustc_trans::driver::driver;
+use rustc_driver::driver;
 use rustc::middle::ty;
 use syntax::ast_map;
 use std::{os, task};
@@ -150,7 +152,7 @@ fn get_ast<T>(path: Path, libs: Vec<Path>, f: |ty::ctxt| -> T) -> T {
     use rustc_trans::back::link;
 
     // cargo culted from rustdoc_ng :(
-    let input = driver::FileInput(path);
+    let input = config::Input::File(path);
 
     let sessopts = config::Options {
         maybe_sysroot: Some(os::self_exe_path().unwrap().dir_path()),
@@ -177,6 +179,6 @@ fn get_ast<T>(path: Path, libs: Vec<Path>, f: |ty::ctxt| -> T) -> T {
     let ast_map = driver::assign_node_ids_and_map(&sess, &mut forest);
     let type_arena = TypedArena::new();
     let res = driver::phase_3_run_analysis_passes(sess, ast_map, &type_arena, id);
-    let driver::CrateAnalysis { ty_cx, .. } = res;
+    let ty::CrateAnalysis { ty_cx, .. } = res;
     f(ty_cx)
 }
