@@ -14,8 +14,8 @@ use std::collections::TreeMap;
 
 fn type_is_unsafe_function(ty: ty::Ty) -> bool {
     match ty.sty {
-        ty::ty_bare_fn(ref f) => f.fn_style == ast::UnsafeFn,
-        ty::ty_closure(ref f) => f.fn_style == ast::UnsafeFn,
+        ty::ty_bare_fn(ref f) => f.unsafety == ast::Unsafety::Unsafe,
+        ty::ty_closure(ref f) => f.unsafety == ast::Unsafety::Unsafe,
         _ => false,
     }
 }
@@ -66,7 +66,7 @@ impl fmt::Show for NodeInfo {
                     }
                     try!(write!(fmt, concat!("{} ", $fmt), self.$name.len()))
                 }
-            })
+            });
         p!("asm", asm);
         p!("deref", raw_deref);
         p!("ffi", ffi);
@@ -135,9 +135,9 @@ impl<'tcx,'a,'b> Visitor<'a> for UnsafeVisitor<'tcx,'b> {
                 block: &ast::Block, span: Span, node_id: ast::NodeId) {
         let (is_item_fn, is_unsafe_fn) = match fn_kind {
             visit::FkItemFn(_, _, fn_style, _) =>
-                (true, fn_style == ast::UnsafeFn),
+                (true, fn_style == ast::Unsafety::Unsafe),
             visit::FkMethod(_, _, method) =>
-                (true, method.pe_fn_style() == ast::UnsafeFn),
+                (true, method.pe_unsafety() == ast::Unsafety::Unsafe),
             _ => (false, false),
         };
 

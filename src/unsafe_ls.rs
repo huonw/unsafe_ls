@@ -55,7 +55,7 @@ fn main() {
     for name in matches.free.iter() {
         let sess = session.clone();
         let name = Path::new(name.as_slice());
-        let _ = task::try(proc() {
+        let _ = task::try(move || {
             sess.run_library(name);
         });
     }
