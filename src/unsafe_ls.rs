@@ -15,9 +15,10 @@ use rustc::session::{mod, config};
 use rustc_driver::driver;
 use rustc::middle::ty;
 use syntax::ast_map;
-use std::{os, task};
-use std::sync::Arc;
 use std::collections::HashSet;
+use std::os;
+use std::sync::Arc;
+use std::thread::Thread;
 
 mod visitor;
 
@@ -55,9 +56,9 @@ fn main() {
     for name in matches.free.iter() {
         let sess = session.clone();
         let name = Path::new(name.as_slice());
-        let _ = task::try(move || {
+        let _ = Thread::spawn(move || {
             sess.run_library(name);
-        });
+        }).join();
     }
 }
 
@@ -86,7 +87,7 @@ impl Session {
                     + info.asm.len()
                     + info.transmute.len()
                     + info.transmute_imm_to_mut.len()
-                    + info.cast_raw_ptr_imm_to_mut.len();
+                    + info.cast_raw_ptr_const_to_mut.len();
 
                 let f = info.ffi.len();
 
@@ -99,7 +100,7 @@ impl Session {
                                    &info.unsafe_call, &info.asm,
                                    &info.transmute,
                                    &info.transmute_imm_to_mut,
-                                   &info.cast_raw_ptr_imm_to_mut].iter() {
+                                   &info.cast_raw_ptr_const_to_mut].iter() {
                             for s in vv.as_slice().iter() {
                                 v.push(*s)
                             }

@@ -10,11 +10,11 @@ use syntax::visit::Visitor;
 
 use std::fmt;
 use std::mem::replace;
-use std::collections::TreeMap;
+use std::collections::BTreeMap;
 
 fn type_is_unsafe_function(ty: ty::Ty) -> bool {
     match ty.sty {
-        ty::ty_bare_fn(ref f) => f.unsafety == ast::Unsafety::Unsafe,
+        ty::ty_bare_fn(_, ref f) => f.unsafety == ast::Unsafety::Unsafe,
         ty::ty_closure(ref f) => f.unsafety == ast::Unsafety::Unsafe,
         _ => false,
     }
@@ -31,9 +31,9 @@ pub struct NodeInfo {
     pub transmute: Vec<Span>,
     pub transmute_imm_to_mut: Vec<Span>,
 
-    // these are only picked up with written in unsafe blocks, but *
+    // these are only picked up with written in unsafe blocks, but *const
     // as *mut is legal anywhere.
-    pub cast_raw_ptr_imm_to_mut: Vec<Span>,
+    pub cast_raw_ptr_const_to_mut: Vec<Span>,
     pub asm: Vec<Span>,
 }
 
@@ -49,7 +49,7 @@ impl NodeInfo {
             unsafe_call: Vec::new(),
             transmute: Vec::new(),
             transmute_imm_to_mut: Vec::new(),
-            cast_raw_ptr_imm_to_mut: Vec::new(),
+            cast_raw_ptr_const_to_mut: Vec::new(),
             asm: Vec::new()
         }
     }
@@ -73,7 +73,7 @@ impl fmt::Show for NodeInfo {
         p!("static mut", static_mut);
         p!("transmute", transmute);
         p!("transmute & to &mut", transmute_imm_to_mut);
-        p!("cast * to *mut", cast_raw_ptr_imm_to_mut);
+        p!("cast *const to *mut", cast_raw_ptr_const_to_mut);
         p!("unsafe call", unsafe_call);
         // silence dead assign warning
         if first {}
@@ -86,7 +86,7 @@ pub struct UnsafeVisitor<'tcx, 'a: 'tcx> {
 
     /// Whether we're in an unsafe context.
     node_info: Option<(ast::NodeId, NodeInfo)>,
-    pub unsafes: TreeMap<ast::NodeId, NodeInfo>,
+    pub unsafes: BTreeMap<ast::NodeId, NodeInfo>,
 }
 
 impl<'tcx, 'a> UnsafeVisitor<'tcx, 'a> {
@@ -94,7 +94,7 @@ impl<'tcx, 'a> UnsafeVisitor<'tcx, 'a> {
         UnsafeVisitor {
             tcx: tcx,
             node_info: None,
-            unsafes: TreeMap::new(),
+            unsafes: BTreeMap::new(),
         }
     }
 
@@ -102,8 +102,8 @@ impl<'tcx, 'a> UnsafeVisitor<'tcx, 'a> {
         visit::walk_crate(self, krate)
     }
 
-    fn info<'a>(&'a mut self) -> &'a mut NodeInfo {
-        self.node_info.as_mut().unwrap().mut1()
+    fn info<'b>(&'b mut self) -> &'b mut NodeInfo {
+        &mut self.node_info.as_mut().unwrap().1
     }
 
     fn check_ptr_cast(&mut self, span: Span, from: &ast::Expr, to: &ast::Expr) -> bool {
@@ -119,7 +119,7 @@ impl<'tcx, 'a> UnsafeVisitor<'tcx, 'a> {
 
             (&ty::ty_ptr(ty::mt { mutbl: ast::MutImmutable, .. }),
              &ty::ty_ptr(ty::mt { mutbl: ast::MutMutable, .. })) => {
-                self.info().cast_raw_ptr_imm_to_mut.push(span);
+                self.info().cast_raw_ptr_const_to_mut.push(span);
                 true
             }
 
