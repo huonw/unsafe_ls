@@ -4,6 +4,17 @@ name = "unsafe_ls"
 version = "0.1.0"
 authors = [ "Huon Wilson <dbau.pp@gmail.com>" ]
 
+homepage = "https://github.com/huonw/unsafe_ls"
+repository = "https://github.com/huonw/unsafe_ls"
+license = "MIT/Apache-1.0"
+keywords = ["unsafe", "tool", "audit"]
+readme = "README.md"
+description = """
+A tool to list unsafe blocks and the unsafe actions within them, to
+enable easier auditing of regions that need extra-careful
+examination.
+"""
+
 [[bin]]
 
 name = "unsafe_ls"
