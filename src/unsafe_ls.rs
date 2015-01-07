@@ -10,12 +10,12 @@ extern crate rustc_driver;
 extern crate rustc_trans;
 extern crate rustc_typeck;
 
-use arena::TypedArena;
-use rustc::session::{mod, config};
+use rustc::session::{self, config};
 use rustc_driver::driver;
 use rustc::middle::ty;
+use rustc::session::search_paths::SearchPaths;
 use syntax::ast_map;
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::os;
 use std::sync::Arc;
 use std::thread::Thread;
@@ -44,13 +44,18 @@ fn main() {
 
     let nonffi = matches.opt_present("nonffi");
     let ffi = matches.opt_present("ffi");
-    let mut libs: Vec<Path> = matches.opt_strs("L").into_iter().map(|s| Path::new(s)).collect();
-    libs.push(Path::new(DEFAULT_LIB_DIR));
+    let mut search_paths = SearchPaths::new();
+    for path in matches.opt_strs("L").into_iter() {
+        search_paths.add_path(&*path)
+    }
+    search_paths.add_path(DEFAULT_LIB_DIR);
+    let externs = HashMap::new();
 
     let session = Arc::new(Session {
         nonffi: nonffi,
         ffi: ffi,
-        libs: libs
+        externs: externs,
+        search_paths: search_paths,
     });
 
     for name in matches.free.iter() {
@@ -66,12 +71,13 @@ fn main() {
 struct Session {
     nonffi: bool,
     ffi: bool,
-    libs: Vec<Path>
+    externs: Externs,
+    search_paths: SearchPaths,
 }
 
 impl Session {
     fn run_library(&self, path: Path) {
-        get_ast(path, self.libs.clone(), |tcx| {
+        get_ast(path, self.search_paths.clone(), self.externs.clone(), |tcx| {
             let cm = tcx.sess.codemap();
 
             let mut visitor = visitor::UnsafeVisitor::new(&tcx);
@@ -146,18 +152,23 @@ impl Session {
     }
 }
 
+pub type Externs = HashMap<String, Vec<String>>;
+
 /// Extract the expanded ast of a krate, along with the codemap which
 /// connects source code locations to the actual code.
-fn get_ast<T>(path: Path, libs: Vec<Path>, f: |ty::ctxt| -> T) -> T {
+fn get_ast<T, F: FnOnce(ty::ctxt) -> T>(path: Path,
+              search_paths: SearchPaths, externs: Externs,
+              f: F) -> T {
     use syntax::diagnostic;
     use rustc_trans::back::link;
 
-    // cargo culted from rustdoc_ng :(
+    // cargo culted from rustdoc :(
     let input = config::Input::File(path);
 
     let sessopts = config::Options {
         maybe_sysroot: Some(os::self_exe_path().unwrap().dir_path()),
-        addl_lib_search_paths: std::cell::RefCell::new(libs),
+        externs: externs,
+        search_paths: search_paths,
         .. config::basic_options().clone()
     };
 
@@ -178,8 +189,7 @@ fn get_ast<T>(path: Path, libs: Vec<Path>, f: |ty::ctxt| -> T) -> T {
         &sess, krate, id.as_slice(), None).unwrap();
     let mut forest = ast_map::Forest::new(krate);
     let ast_map = driver::assign_node_ids_and_map(&sess, &mut forest);
-    let type_arena = TypedArena::new();
-    let res = driver::phase_3_run_analysis_passes(sess, ast_map, &type_arena, id);
-    let ty::CrateAnalysis { ty_cx, .. } = res;
-    f(ty_cx)
+    let arena = ty::CtxtArenas::new();
+    let res = driver::phase_3_run_analysis_passes(sess, ast_map, &arena, id);
+    f(res.ty_cx)
 }
