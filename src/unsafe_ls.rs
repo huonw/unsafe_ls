@@ -1,6 +1,5 @@
 #![crate_name = "unsafe_ls"]
-#![feature(macro_rules)]
-
+#![allow(unstable)]
 extern crate arena;
 extern crate getopts;
 extern crate syntax;
@@ -61,7 +60,7 @@ fn main() {
     for name in matches.free.iter() {
         let sess = session.clone();
         let name = Path::new(name.as_slice());
-        let _ = Thread::spawn(move || {
+        let _ = Thread::scoped(move || {
             sess.run_library(name);
         }).join();
     }
@@ -121,7 +120,7 @@ impl Session {
                     let lo = cm.lookup_char_pos_adj(info.span.lo);
 
                     // print the summary line
-                    println!("{}:{}:{}: {} with {}",
+                    println!("{}:{}:{}: {} with {:?}",
                              lo.filename,
                              lo.line, lo.col.to_uint() + 1,
                              if info.is_fn {"fn"} else {"block"},

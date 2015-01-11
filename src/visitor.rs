@@ -15,7 +15,6 @@ use std::collections::BTreeMap;
 fn type_is_unsafe_function(ty: ty::Ty) -> bool {
     match ty.sty {
         ty::ty_bare_fn(_, ref f) => f.unsafety == ast::Unsafety::Unsafe,
-        ty::ty_closure(ref f) => f.unsafety == ast::Unsafety::Unsafe,
         _ => false,
     }
 }
