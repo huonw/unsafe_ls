@@ -13,7 +13,7 @@ use rustc::session::{self, config};
 use rustc_driver::driver;
 use rustc::middle::ty;
 use rustc::session::search_paths::SearchPaths;
-use syntax::ast_map;
+use syntax::codemap::Pos;
 use std::collections::{HashSet, HashMap};
 use std::os;
 use std::sync::Arc;
@@ -79,7 +79,7 @@ impl Session {
         get_ast(path, self.search_paths.clone(), self.externs.clone(), |tcx| {
             let cm = tcx.sess.codemap();
 
-            let mut visitor = visitor::UnsafeVisitor::new(&tcx);
+            let mut visitor = visitor::UnsafeVisitor::new(tcx);
             visitor.check_crate(tcx.map.krate());
 
             for (_, info) in visitor.unsafes.iter() {
@@ -122,13 +122,13 @@ impl Session {
                     // print the summary line
                     println!("{}:{}:{}: {} with {:?}",
                              lo.filename,
-                             lo.line, lo.col.to_uint() + 1,
+                             lo.line, lo.col.to_usize() + 1,
                              if info.is_fn {"fn"} else {"block"},
                              *info);
 
                     // and the individual unsafe actions within each block
                     // (in source order)
-                    v.as_mut_slice().sort_by(|a, b| a.lo.to_uint().cmp(&b.lo.to_uint()));
+                    v.as_mut_slice().sort_by(|a, b| a.lo.to_usize().cmp(&b.lo.to_usize()));
 
                     let mut seen = HashSet::new();
                     for s in v.as_slice().iter() {
@@ -155,11 +155,10 @@ pub type Externs = HashMap<String, Vec<String>>;
 
 /// Extract the expanded ast of a krate, along with the codemap which
 /// connects source code locations to the actual code.
-fn get_ast<T, F: FnOnce(ty::ctxt) -> T>(path: Path,
-              search_paths: SearchPaths, externs: Externs,
-              f: F) -> T {
+fn get_ast<F: Fn(&ty::ctxt)>(path: Path,
+                             search_paths: SearchPaths, externs: Externs,
+                             f: F) {
     use syntax::diagnostic;
-    use rustc_trans::back::link;
 
     // cargo culted from rustdoc :(
     let input = config::Input::File(path);
@@ -181,14 +180,11 @@ fn get_ast<T, F: FnOnce(ty::ctxt) -> T>(path: Path,
 
     let cfg = config::build_configuration(&sess);
 
-    let krate = driver::phase_1_parse_input(&sess, cfg, &input);
-    let id = link::find_crate_name(Some(&sess), krate.attrs.as_slice(),
-                                   &input);
-    let krate = driver::phase_2_configure_and_expand(
-        &sess, krate, id.as_slice(), None).unwrap();
-    let mut forest = ast_map::Forest::new(krate);
-    let ast_map = driver::assign_node_ids_and_map(&sess, &mut forest);
-    let arena = ty::CtxtArenas::new();
-    let res = driver::phase_3_run_analysis_passes(sess, ast_map, &arena, id);
-    f(res.ty_cx)
+    let mut controller = driver::CompileController::basic();
+    controller.after_analysis = driver::PhaseController {
+        stop: true,
+        callback: Box::new(|state| f(state.tcx.unwrap()))
+    };
+
+    driver::compile_input(sess, cfg, &input, &None, &None, None, controller);
 }

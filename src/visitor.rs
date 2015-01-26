@@ -53,7 +53,7 @@ impl NodeInfo {
         }
     }
 }
-impl fmt::Show for NodeInfo {
+impl fmt::Debug for NodeInfo {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         let mut first = true;
         macro_rules! p ( ($fmt: tt, $name: ident) => {
