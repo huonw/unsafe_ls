@@ -1,5 +1,5 @@
 #![crate_name = "unsafe_ls"]
-#![allow(unstable)]
+#![feature(rustc_private, os, core, path, collections, std_misc)]
 extern crate arena;
 extern crate getopts;
 extern crate syntax;
@@ -172,7 +172,7 @@ fn get_ast<F: Fn(&ty::ctxt)>(path: Path,
 
     let codemap = syntax::codemap::CodeMap::new();
     let diagnostic_handler =
-        diagnostic::default_handler(diagnostic::Auto, None);
+        diagnostic::default_handler(diagnostic::Auto, None, true);
     let span_diagnostic_handler =
         diagnostic::mk_span_handler(diagnostic_handler, codemap);
 
