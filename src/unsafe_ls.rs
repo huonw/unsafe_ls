@@ -1,5 +1,5 @@
 #![crate_name = "unsafe_ls"]
-#![feature(rustc_private, os, core, path, collections, std_misc)]
+#![feature(rustc_private, slice_patterns)]
 extern crate arena;
 extern crate getopts;
 extern crate syntax;
@@ -15,29 +15,31 @@ use rustc::middle::ty;
 use rustc::session::search_paths::SearchPaths;
 use syntax::codemap::Pos;
 use std::collections::{HashSet, HashMap};
-use std::os;
+use std::env;
 use std::sync::Arc;
-use std::thread::Thread;
+use std::thread;
+use std::path::{Path, PathBuf};
 
 mod visitor;
 
 static DEFAULT_LIB_DIR: &'static str = "/usr/local/lib/rustlib/x86_64-unknown-linux-gnu/lib";
 
 fn main() {
-    let args: Vec<_> = std::os::args();
-    let opts = [getopts::optflag("h", "help", "show this help message"),
-                getopts::optflag("n", "nonffi",
-                                 "print `unsafe`s that include non-FFI unsafe behaviours"),
-                getopts::optflag("f", "ffi", "print `unsafe`s that do FFI calls"),
-                getopts::optmulti("L", "library-path",
-                                  "directories to add to crate search path", "DIR")];
+    let mut args = env::args();
+    let mut opts = getopts::Options::new();
+    opts.optflag("h", "help", "show this help message");
+    opts.optflag("n", "nonffi",
+                 "print `unsafe`s that include non-FFI unsafe behaviours");
+    opts.optflag("f", "ffi", "print `unsafe`s that do FFI calls");
+    opts.optmulti("L", "library-path",
+                  "directories to add to crate search path", "DIR");
 
-    let matches = getopts::getopts(args.tail(), &opts).unwrap();
+    let name = args.next().unwrap();
+    let matches = opts.parse(args).unwrap();
     if matches.opt_present("help") {
         println!("{}",
-                 getopts::usage(format!("{} - find all unsafe blocks and print the \
-                                unsafe actions within them", args[0]).as_slice(),
-                     &opts));
+                 opts.usage(&format!("{} - find all unsafe blocks and print the \
+                                      unsafe actions within them", name)));
         return;
     }
 
@@ -59,10 +61,11 @@ fn main() {
 
     for name in matches.free.iter() {
         let sess = session.clone();
-        let name = Path::new(name.as_slice());
-        let _ = Thread::scoped(move || {
+        let name = Path::new(name).to_owned();
+        // the compiler has all sorts of thread locals.
+        thread::spawn(move || {
             sess.run_library(name);
-        }).join();
+        }).join().unwrap();
     }
 }
 
@@ -75,7 +78,7 @@ struct Session {
 }
 
 impl Session {
-    fn run_library(&self, path: Path) {
+    fn run_library(&self, path: PathBuf) {
         get_ast(path, self.search_paths.clone(), self.externs.clone(), |tcx| {
             let cm = tcx.sess.codemap();
 
@@ -106,15 +109,11 @@ impl Session {
                                    &info.transmute,
                                    &info.transmute_imm_to_mut,
                                    &info.cast_raw_ptr_const_to_mut].iter() {
-                            for s in vv.as_slice().iter() {
-                                v.push(*s)
-                            }
+                            v.extend(vv.iter().cloned())
                         }
                     }
                     if self.ffi {
-                        for s in info.ffi.as_slice().iter() {
-                            v.push(*s)
-                        }
+                        v.extend(info.ffi.iter().cloned())
                     }
 
                     let lo = cm.lookup_char_pos_adj(info.span.lo);
@@ -128,13 +127,14 @@ impl Session {
 
                     // and the individual unsafe actions within each block
                     // (in source order)
-                    v.as_mut_slice().sort_by(|a, b| a.lo.to_usize().cmp(&b.lo.to_usize()));
+                    v.sort_by(|a, b| a.lo.to_usize().cmp(&b.lo.to_usize()));
 
                     let mut seen = HashSet::new();
-                    for s in v.as_slice().iter() {
+                    for s in &v {
                         let lines = cm.span_to_lines(*s);
-                        match lines.lines.as_slice() {
-                            [line_num, ..] => {
+                        match &*lines.lines {
+                            [line_info, ..] => {
+                                let line_num = line_info.line_index;
                                 let t = (line_num, lines.file.name.clone());
                                 if !seen.contains(&t) {
                                     seen.insert(t);
@@ -155,7 +155,7 @@ pub type Externs = HashMap<String, Vec<String>>;
 
 /// Extract the expanded ast of a krate, along with the codemap which
 /// connects source code locations to the actual code.
-fn get_ast<F: Fn(&ty::ctxt)>(path: Path,
+fn get_ast<F: Fn(&ty::ctxt)>(path: PathBuf,
                              search_paths: SearchPaths, externs: Externs,
                              f: F) {
     use syntax::diagnostic;
@@ -164,7 +164,7 @@ fn get_ast<F: Fn(&ty::ctxt)>(path: Path,
     let input = config::Input::File(path);
 
     let sessopts = config::Options {
-        maybe_sysroot: Some(os::self_exe_path().unwrap().dir_path()),
+        maybe_sysroot: Some(env::current_exe().unwrap().parent().unwrap().to_owned()),
         externs: externs,
         search_paths: search_paths,
         .. config::basic_options().clone()
@@ -182,7 +182,7 @@ fn get_ast<F: Fn(&ty::ctxt)>(path: Path,
 
     let mut controller = driver::CompileController::basic();
     controller.after_analysis = driver::PhaseController {
-        stop: true,
+        stop: rustc_driver::Compilation::Stop,
         callback: Box::new(|state| f(state.tcx.unwrap()))
     };
 

@@ -1,2 +1,6 @@
+language: rust
+sudo: false
+script:
+  - cargo build
 notifications:
     webhooks: http://huon.me:54856/travis

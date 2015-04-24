@@ -15,6 +15,9 @@ enable easier auditing of regions that need extra-careful
 examination.
 """
 
+[dependencies]
+getopts = "0.2"
+
 [[bin]]
 
 name = "unsafe_ls"

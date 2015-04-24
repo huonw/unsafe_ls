@@ -2,7 +2,6 @@ use rustc::middle::{ty, def};
 use rustc::middle::ty::MethodCall;
 
 use syntax::{ast, ast_util, ast_map};
-use syntax::ast_util::PostExpansionMethod;
 use syntax::codemap::Span;
 use syntax::parse::token;
 use syntax::visit;
@@ -133,10 +132,10 @@ impl<'tcx,'a,'b> Visitor<'a> for UnsafeVisitor<'tcx,'b> {
     fn visit_fn(&mut self, fn_kind: visit::FnKind<'a>, fn_decl: &'a ast::FnDecl,
                 block: &ast::Block, span: Span, node_id: ast::NodeId) {
         let (is_item_fn, is_unsafe_fn) = match fn_kind {
-            visit::FkItemFn(_, _, fn_style, _) =>
+            visit::FkItemFn(_, _, fn_style, _, _) =>
                 (true, fn_style == ast::Unsafety::Unsafe),
-            visit::FkMethod(_, _, method) =>
-                (true, method.pe_unsafety() == ast::Unsafety::Unsafe),
+            visit::FkMethod(_, sig, _) =>
+                (true, sig.unsafety == ast::Unsafety::Unsafe),
             _ => (false, false),
         };
 
@@ -186,14 +185,14 @@ impl<'tcx,'a,'b> Visitor<'a> for UnsafeVisitor<'tcx,'b> {
             match expr.node {
                 ast::ExprMethodCall(_, _, _) => {
                     let method_call = MethodCall::expr(expr.id);
-                    let base_type = (*self.tcx.method_map.borrow())[method_call].ty;
+                    let base_type = self.tcx.method_map.borrow()[&method_call].ty;
                     if type_is_unsafe_function(base_type) {
                         self.info().unsafe_call.push(expr.span)
                     }
                 }
                 ast::ExprCall(ref base, ref args) => {
-                    match (&base.node, args.as_slice()) {
-                        (&ast::ExprPath(ref p), [ref arg])
+                    match (&base.node, &**args) {
+                        (&ast::ExprPath(_, ref p), [ref arg])
                             // ew, but whatever.
                             if p.segments.last().unwrap().identifier.name ==
                             token::intern("transmute") => {
@@ -205,7 +204,7 @@ impl<'tcx,'a,'b> Visitor<'a> for UnsafeVisitor<'tcx,'b> {
 
                         _ => {
                             let is_ffi = match self.tcx.def_map.borrow().get(&base.id) {
-                                Some(&def::DefFn(did, _)) => {
+                                Some(&def::PathResolution { base_def: def::DefFn(did, _), .. }) => {
                                     // cross-crate calls are always
                                     // just unsafe calls.
                                     ast_util::is_local(did) &&
