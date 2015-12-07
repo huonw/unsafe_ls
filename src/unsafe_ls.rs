@@ -131,7 +131,7 @@ impl Session {
 
                     let mut seen = HashSet::new();
                     for s in &v {
-                        let lines = cm.span_to_lines(*s);
+                        let lines = cm.span_to_lines(*s).unwrap();
                         match &*lines.lines {
                             [line_info, ..] => {
                                 let line_num = line_info.line_index;
@@ -172,9 +172,9 @@ fn get_ast<F: Fn(&ty::ctxt)>(path: PathBuf,
 
     let codemap = syntax::codemap::CodeMap::new();
     let diagnostic_handler =
-        diagnostic::default_handler(diagnostic::Auto, None, true);
+        diagnostic::Handler::new(diagnostic::Auto, None, true);
     let span_diagnostic_handler =
-        diagnostic::mk_span_handler(diagnostic_handler, codemap);
+        diagnostic::SpanHandler::new(diagnostic_handler, codemap);
 
     let sess = session::build_session_(sessopts, None, span_diagnostic_handler);
 
