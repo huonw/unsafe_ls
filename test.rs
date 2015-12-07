@@ -1,17 +1,17 @@
 extern { fn abort() -> !; }
-static mut x: uint = 1;
+static mut x: i32 = 1;
 unsafe fn foo() {
     x += 1
 }
 fn bar() {
     unsafe {
-        std::mem::transmute::<&int, &mut int>(&1);
-        let _ = 0 as *const  int as *mut int;
+        std::mem::transmute::<&i32, &mut i32>(&1);
+        let _ = 0 as *const i32 as *mut i32;
     }
 }
 fn main() {
     unsafe {
-        *std::ptr::null::<int>();
+        *std::ptr::null::<i32>();
         x += 1;
     }
     unsafe {

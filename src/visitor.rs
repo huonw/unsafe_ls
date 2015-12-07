@@ -1,7 +1,8 @@
+use rustc::ast_map;
 use rustc::middle::{ty, def};
 use rustc::middle::ty::MethodCall;
 
-use syntax::{ast, ast_util, ast_map};
+use syntax::{ast, ast_util};
 use syntax::codemap::Span;
 use syntax::parse::token;
 use syntax::visit;
@@ -13,7 +14,7 @@ use std::collections::BTreeMap;
 
 fn type_is_unsafe_function(ty: ty::Ty) -> bool {
     match ty.sty {
-        ty::ty_bare_fn(_, ref f) => f.unsafety == ast::Unsafety::Unsafe,
+        ty::TyBareFn(_, ref f) => f.unsafety == ast::Unsafety::Unsafe,
         _ => false,
     }
 }
@@ -105,18 +106,18 @@ impl<'tcx, 'a> UnsafeVisitor<'tcx, 'a> {
     }
 
     fn check_ptr_cast(&mut self, span: Span, from: &ast::Expr, to: &ast::Expr) -> bool {
-        let from_ty = ty::expr_ty(self.tcx, from);
-        let to_ty = ty::expr_ty(self.tcx, to);
+        let from_ty = self.tcx.expr_ty(from);
+        let to_ty = self.tcx.expr_ty(to);
 
         match (&from_ty.sty, &to_ty.sty) {
-            (&ty::ty_rptr(_, ty::mt { mutbl: ast::MutImmutable, .. }),
-             &ty::ty_rptr(_, ty::mt { mutbl: ast::MutMutable, .. })) => {
+            (&ty::TyRef(_, ty::mt { mutbl: ast::MutImmutable, .. }),
+             &ty::TyRef(_, ty::mt { mutbl: ast::MutMutable, .. })) => {
                 self.info().transmute_imm_to_mut.push(span);
                 true
             }
 
-            (&ty::ty_ptr(ty::mt { mutbl: ast::MutImmutable, .. }),
-             &ty::ty_ptr(ty::mt { mutbl: ast::MutMutable, .. })) => {
+            (&ty::TyRawPtr(ty::mt { mutbl: ast::MutImmutable, .. }),
+             &ty::TyRawPtr(ty::mt { mutbl: ast::MutMutable, .. })) => {
                 self.info().cast_raw_ptr_const_to_mut.push(span);
                 true
             }
@@ -132,7 +133,7 @@ impl<'tcx,'a,'b> Visitor<'a> for UnsafeVisitor<'tcx,'b> {
     fn visit_fn(&mut self, fn_kind: visit::FnKind<'a>, fn_decl: &'a ast::FnDecl,
                 block: &ast::Block, span: Span, node_id: ast::NodeId) {
         let (is_item_fn, is_unsafe_fn) = match fn_kind {
-            visit::FkItemFn(_, _, fn_style, _, _) =>
+            visit::FkItemFn(_, _, fn_style, _, _, _) =>
                 (true, fn_style == ast::Unsafety::Unsafe),
             visit::FkMethod(_, sig, _) =>
                 (true, sig.unsafety == ast::Unsafety::Unsafe),
@@ -185,7 +186,7 @@ impl<'tcx,'a,'b> Visitor<'a> for UnsafeVisitor<'tcx,'b> {
             match expr.node {
                 ast::ExprMethodCall(_, _, _) => {
                     let method_call = MethodCall::expr(expr.id);
-                    let base_type = self.tcx.method_map.borrow()[&method_call].ty;
+                    let base_type = self.tcx.tables.borrow().method_map[&method_call].ty;
                     if type_is_unsafe_function(base_type) {
                         self.info().unsafe_call.push(expr.span)
                     }
@@ -219,7 +220,7 @@ impl<'tcx,'a,'b> Visitor<'a> for UnsafeVisitor<'tcx,'b> {
                             if is_ffi {
                                 self.info().ffi.push(expr.span)
                             } else {
-                                let base_type = ty::node_id_to_type(self.tcx, base.id);
+                                let base_type = self.tcx.node_id_to_type(base.id);
                                 if type_is_unsafe_function(base_type) {
                                     self.info().unsafe_call.push(expr.span)
                                 }
@@ -229,9 +230,9 @@ impl<'tcx,'a,'b> Visitor<'a> for UnsafeVisitor<'tcx,'b> {
                 }
 
                 ast::ExprUnary(ast::UnDeref, ref base) => {
-                    let base_type = ty::node_id_to_type(self.tcx, base.id);
+                    let base_type = self.tcx.node_id_to_type(base.id);
                     match base_type.sty {
-                        ty::ty_ptr(_) => {
+                        ty::TyRawPtr(_) => {
                             self.info().raw_deref.push(expr.span)
                         }
                         _ => {}
@@ -241,7 +242,7 @@ impl<'tcx,'a,'b> Visitor<'a> for UnsafeVisitor<'tcx,'b> {
                     self.info().asm.push(expr.span)
                 }
                 ast::ExprPath(..) => {
-                    match ty::resolve_expr(self.tcx, expr) {
+                    match self.tcx.resolve_expr(expr) {
                         def::DefStatic(_, true) => {
                             self.info().static_mut.push(expr.span)
                         }
